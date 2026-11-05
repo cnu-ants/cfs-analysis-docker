@@ -1,0 +1,72 @@
+# Select the cFS source/IKOS architecture with CFS_ARCH=arm64|amd64.
+# Infer's official Linux binary runs as linux/amd64, regardless of host arch.
+# Use ./cfs.sh for convenient host auto-detection and targeted actions.
+services:
+  cfs:
+    image: "cfs:${CFS_ARCH:?Set CFS_ARCH or use ./cfs.sh}"
+    platform: "linux/${CFS_ARCH:?Set CFS_ARCH or use ./cfs.sh}"
+    build:
+      context: .
+      dockerfile: docker/cfs/Dockerfile
+      args:
+        CFS_REF: "${CFS_REF:-v7.0.2-rc1-oss}"
+        GCC_APT_VERSION: "${GCC_APT_VERSION:-13.3.0-6ubuntu2~24.04.1}"
+        LLVM_APT_VERSION: "${LLVM_APT_VERSION:-1:18.1.3-1ubuntu1}"
+    sysctls:
+      fs.mqueue.msg_max: "512"
+      fs.mqueue.queues_max: "512"
+    environment:
+      SMOKE_SECONDS: "${SMOKE_SECONDS:-15}"
+      CTEST_TIMEOUT: "${CTEST_TIMEOUT:-45}"
+    volumes:
+      - cfs-workspace:/cFS
+      - ./results/cfs:/reports
+    working_dir: /cFS
+    command: ["sleep", "infinity"]
+
+  ikos:
+    image: "cfs-ikos:${CFS_ARCH:?Set CFS_ARCH or use ./cfs.sh}"
+    platform: "linux/${CFS_ARCH:?Set CFS_ARCH or use ./cfs.sh}"
+    build:
+      context: .
+      dockerfile: docker/ikos/Dockerfile
+      args:
+        IKOS_APT_VERSION: "${IKOS_APT_VERSION:-3.2-3}"
+        LLVM14_APT_VERSION: "${LLVM14_APT_VERSION:-1:14.0.6-19build4}"
+    depends_on:
+      cfs:
+        condition: service_started
+    volumes:
+      - cfs-workspace:/cFS:ro
+      - ikos-workspace:/analysis-work
+      - ./results/ikos/${CFS_ARCH:?Set CFS_ARCH}:/results
+    working_dir: /analysis-work
+    command: ["sleep", "infinity"]
+
+  infer:
+    image: cfs-infer:amd64
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: docker/infer/Dockerfile
+      args:
+        INFER_VERSION: "${INFER_VERSION:-1.3.0}"
+        INFER_SHA256: "${INFER_SHA256:-02be62ba931cb43e2d42bbf7abf4bd9a410cf8464cce5453934e25c90a825850}"
+        GCC_APT_VERSION: "${GCC_APT_VERSION:-13.3.0-6ubuntu2~24.04.1}"
+    depends_on:
+      cfs:
+        condition: service_started
+    volumes:
+      - cfs-workspace:/cFS:ro
+      - infer-workspace:/analysis-work
+      - ./results/infer/${CFS_ARCH:?Set CFS_ARCH}:/results
+    working_dir: /analysis-work
+    command: ["sleep", "infinity"]
+
+volumes:
+  cfs-workspace:
+    name: "cfs-workspace-${CFS_ARCH:?Set CFS_ARCH}"
+  ikos-workspace:
+    name: "cfs-ikos-workspace-${CFS_ARCH:?Set CFS_ARCH}"
+  infer-workspace:
+    name: "cfs-infer-workspace-${CFS_ARCH:?Set CFS_ARCH}"
